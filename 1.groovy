@@ -9,7 +9,15 @@ import groovy.sql.Sql
 
 class MyVisitor extends org.objectweb.asm.ClassVisitor {
     
-    def cur_class
+    String _hash
+    String _file
+    String _package
+    String _class
+    String _version
+    String _access
+    String _super
+    String _interfaces
+    
     def sql
     
 	MyVisitor() {
@@ -18,29 +26,46 @@ class MyVisitor extends org.objectweb.asm.ClassVisitor {
 	    sql = Sql.newInstance("jdbc:h2:h2.db", "sa", "", "org.h2.Driver")
 
         def query = """CREATE TABLE IF NOT EXISTS classes (
-                     id bigint auto_increment, 
-                     class varchar, 
-                     package varchar, 
-                     name varchar, 
-                     type varchar, 
+                     id         varchar, 
+                     version    varchar,
+                     access     varchar,
+                     file       varchar,
+                     package    varchar,
+                     class      varchar,
+                     super      varchar,
+                     interfaces varchar, 
+                     PRIMARY KEY (id) );""" 
+        sql.execute(query)
+        
+        def query = """CREATE TABLE IF NOT EXISTS methods (
+                     id         varchar,
+                     class      varchar, 
+                     method     varchar,
+                     access     varchar,
+                     exceptions varchar,
                      PRIMARY KEY (id) );""" 
         sql.execute(query)
 	}
 	
+	
+	
 	void visit(int version, int access, String name, String signature, String superName, String[] interfaces){
-		def cls = name.replace("/", ".") + " extends " + superName.replace("/",".")
-		if (interfaces.length >0){
-			cls += " implements " + interfaces.collect({ it.replace("/",".") }). join(", ")
-		}
-		cur_class = cls
-		println("Class: " + cls)
+		_version = version
+		_access = access
+		_package = name.replace("/", ".")
+	    _class = name.replace("/", ".")    
+          try{ (_package, _class) = name.split(/[.](?=[^.]+$)/) }catch(Exception e){}
+		_super = superName.replace("/",".")
+		_interfaces = interfaces.collect({ it.replace("/",".") }).join(", ")
+		
+		sql.execute("INSERT INTO classes(id, version, access, file, package, class, super, interfaces) VALUES ( ${_hash}, ${_version}, ${_access}, ${_file}, ${_package}, ${_class}, ${_super}, ${_interfaces} );")
 	}
 	
 	org.objectweb.asm.FieldVisitor visitField(int access, String name, String desc, String signature, Object value){
-		def _name = org.objectweb.asm.Type.getReturnType(desc).getClassName() + " " + name + " = " + value
+		def _method = org.objectweb.asm.Type.getReturnType(desc).getClassName() + " " + name + " = " + value
 		
 		//println("Field: " + out)
-		sql.execute("INSERT INTO classes(class, name, type) VALUES (${cur_class}, ${_name}, 'field');")
+		sql.execute("INSERT INTO classes(id, class, method, access, exceptions) VALUES ( ${_hash}, ${_access}, ${_file}, ${_package}, ${_class}, ${_super}, ${_interfaces} );")
 		
 		return super.visitField(access, name, desc, signature, value)
 	}
@@ -50,7 +75,7 @@ class MyVisitor extends org.objectweb.asm.ClassVisitor {
 		def _name = name + "(" + org.objectweb.asm.Type.getArgumentTypes(desc).collect({ it.getClassName() }).join(", ") + ")"
 		
         //println("Method: " + out)
-        sql.execute("INSERT INTO classes(class, name, type) VALUES (${cur_class}, ${_name}, 'method');")
+        sql.execute("INSERT INTO classes(id, class, method, access, exceptions) VALUES ( ${_hash}, ${_access}, ${_file}, ${_package}, ${_class}, ${_super}, ${_interfaces} );")
         return super.visitMethod(access, name, desc, signature, exceptions)
     }
 }
